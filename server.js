@@ -28,7 +28,6 @@ wss.on('connection', (ws) => {
   ws.on('message', async (messaggio) => {
     const dati = JSON.parse(messaggio);
 
-    // Registrazione ruoli
     if (dati.tipo === 'registra') {
       if (dati.ruolo === 'utente') {
         utentiConnessi.add(ws);
@@ -41,7 +40,6 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // Se l'utente preme STOP
     if (dati.mittente === 'utente' && dati.azione === 'stop') {
       interrotto = true;
       if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN) {
@@ -50,16 +48,12 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // Se l'utente fa una DOMANDA
     if (dati.mittente === 'utente' && dati.azione === 'domanda') {
       interrotto = false;
 
-      // CASO 1: La console di Umberto è aperta e connessa -> risponde Umberto!
       if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN) {
         consoleUmberto.send(JSON.stringify(dati));
-      } 
-      // CASO 2: La console di Umberto è chiusa -> risponde Gemini in automatico!
-      else {
+      } else {
         if (!API_KEY) {
           ws.send(JSON.stringify({ azione: 'risposta', testo: "⚠️ Chiave API non configurata su Render!" }));
           return;
@@ -81,20 +75,19 @@ wss.on('connection', (ws) => {
           );
 
           const json = await risposta.json();
-          const testoAI = json.candidates?.[0]?.content?.parts?.[0]?.text || "Non sono riuscita a elaborare una risposta.";
+          const testoAI = json.candidates?.[0]?.content?.parts?.[0]?.text || `Errore Google: ${json.error?.message || JSON.stringify(json)}`;
 
           if (!interrotto && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ azione: 'risposta', testo: testoAI }));
           }
         } catch (errore) {
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ azione: 'risposta', testo: "Ops, errore di connessione con il server AI." }));
+            ws.send(JSON.stringify({ azione: 'risposta', testo: `Errore di connessione: ${errore.message}` }));
           }
         }
       }
     }
 
-    // Risposta manuale inviata da Umberto
     if (dati.mittente === 'umberto') {
       utentiConnessi.forEach((utente) => {
         if (utente.readyState === WebSocket.OPEN) {
@@ -107,7 +100,7 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     utentiConnessi.delete(ws);
     if (ws === consoleUmberto) {
-      consoleUmberto = null; // Segna subito che Umberto è offline
+      consoleUmberto = null;
     }
   });
 });
