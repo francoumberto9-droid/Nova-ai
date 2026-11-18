@@ -2,13 +2,15 @@ const http = require('http');
 const fs = require('fs');
 const WebSocket = require('ws');
 
-const API_KEY = process.env.GEMINI_API_KEY;
-
+// Crea il server web che smista le due pagine
 const server = http.createServer((req, res) => {
-  fs.readFile('index.html', (err, data) => {
+  // Se l'indirizzo finisce con /umberto, mostra la tua console segreta
+  const fileDaAprire = req.url === '/umberto' ? 'umberto.html' : 'index.html';
+
+  fs.readFile(fileDaAprire, (err, data) => {
     if (err) {
-      res.writeHead(500);
-      return res.end('Errore nel caricamento della pagina');
+      res.writeHead(404);
+      return res.end('Pagina non trovata');
     }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(data);
@@ -17,54 +19,47 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server });
 
-wss.on('connection', (ws) => {
-  let interrotto = false;
+let utentiConnessi = new Set();
+let consoleUmberto = null;
 
-  ws.on('message', async (messaggio) => {
+wss.on('connection', (ws) => {
+  ws.on('message', (messaggio) => {
     const dati = JSON.parse(messaggio);
 
-    if (dati.azione === 'stop') {
-      interrotto = true;
+    // Registrazione ruoli
+    if (dati.tipo === 'registra') {
+      if (dati.ruolo === 'utente') {
+        utentiConnessi.add(ws);
+        if (consoleUmberto) {
+          consoleUmberto.send(JSON.stringify({ azione: 'info', testo: '🟢 Un nuovo utente è entrato nella chat!' }));
+        }
+      } else if (dati.ruolo === 'umberto') {
+        consoleUmberto = ws;
+      }
       return;
     }
 
-    if (dati.azione === 'domanda') {
-      interrotto = false;
-
-      if (!API_KEY) {
-        ws.send(JSON.stringify({ azione: 'risposta', testo: "⚠️ Chiave API non configurata su Render!" }));
-        return;
-      }
-
-      try {
-        const risposta = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              systemInstruction: {
-                parts: [{ text: "Ti chiami NOVA. Sei un'intelligenza artificiale brillante, simpatica, diretta e utile." }]
-              },
-              contents: [{ parts: [{ text: dati.testo }] }]
-            })
-          }
-        );
-
-        const json = await risposta.json();
-        const testoAI = json.candidates?.[0]?.content?.parts?.[0]?.text || "Non sono riuscita a elaborare una risposta.";
-
-        if (!interrotto) {
-          ws.send(JSON.stringify({ azione: 'risposta', testo: testoAI }));
-        }
-      } catch (errore) {
-        ws.send(JSON.stringify({ azione: 'risposta', testo: "Ops, errore di connessione con il server AI." }));
-      }
+    // Domanda o Stop dall'utente -> vanno alla Console di Umberto
+    if (dati.mittente === 'utente' && consoleUmberto) {
+      consoleUmberto.send(JSON.stringify(dati));
     }
+
+    // Risposta da Umberto -> va agli utenti in chat
+    if (dati.mittente === 'umberto') {
+      utentiConnessi.forEach((utente) => {
+        if (utente.readyState === WebSocket.OPEN) {
+          utente.send(JSON.stringify(dati));
+        }
+      });
+    }
+  });
+
+  ws.on('close', () => {
+    utentiConnessi.delete(ws);
   });
 });
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log(`Sito AI attivo sulla porta ${PORT}`);
+  console.log(`Server NOVA attivo sulla porta ${PORT}`);
 });
