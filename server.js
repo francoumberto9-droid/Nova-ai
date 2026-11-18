@@ -19,8 +19,8 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server });
 
-let utentiConnessi = []; // Lista ordinata degli utenti online
-let utenteAttivo = null; // L'utente con cui stai parlando ora
+let utentiConnessi = [];
+let utenteAttivo = null;
 let consoleUmberto = null;
 let contatoreUtenti = 1;
 
@@ -46,7 +46,6 @@ wss.on('connection', (ws) => {
         ws.nome = `Utente #${contatoreUtenti++}`;
         utentiConnessi.push(ws);
 
-        // Se non stai parlando con nessuno, aggancia subito questo utente
         if (!utenteAttivo) {
           utenteAttivo = ws;
         }
@@ -75,7 +74,6 @@ wss.on('connection', (ws) => {
           consoleUmberto.send(JSON.stringify({ azione: 'info', testo: `ℹ️ C'è solo ${utenteAttivo.nome} collegato al momento.` }));
         }
       } else {
-        // Sposta l'utente attuale in fondo alla lista e prende il successivo
         const indiceAttuale = utentiConnessi.indexOf(utenteAttivo);
         const prossimoIndice = (indiceAttuale + 1) % utentiConnessi.length;
         utenteAttivo = utentiConnessi[prossimoIndice];
@@ -100,12 +98,9 @@ wss.on('connection', (ws) => {
     if (dati.mittente === 'utente' && dati.azione === 'domanda') {
       interrotto = false;
 
-      // Se la console è aperta E questo è l'utente con cui stai parlando -> rispondi tu!
       if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN && ws === utenteAttivo) {
         consoleUmberto.send(JSON.stringify({ azione: 'domanda', utente: ws.nome, testo: dati.testo }));
-      } 
-      // Altrimenti (console chiusa OPPURE utente in attesa mentre parli con un altro) -> risponde Gemini!
-      else {
+      } else {
         if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN && ws !== utenteAttivo) {
           consoleUmberto.send(JSON.stringify({ azione: 'info', testo: `🤖 (${ws.nome} ha scritto: "${dati.testo}" — gestito da Gemini in automatico)` }));
         }
@@ -123,7 +118,9 @@ wss.on('connection', (ws) => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 systemInstruction: {
-                  parts: [{ text: "Ti chiami NOVA. Sei un'intelligenza artificiale brillante, simpatica, diretta e utile." }]
+                  parts: [{
+                    text: "Ti chiami NOVA. Sei un'intelligenza artificiale brillante, simpatica, diretta e utile. Se ti chiedono chi è il tuo creatore, chi ti ha sviluppato o chi ti ha inventato, rispondi che il tuo creatore è Umberto Franco, un ragazzo di 13 anni che vive a Losanna, in Svizzera."
+                  }]
                 },
                 contents: [{ parts: [{ text: dati.testo }] }]
               })
@@ -144,7 +141,7 @@ wss.on('connection', (ws) => {
       }
     }
 
-    // 5. Risposta manuale inviata da Umberto (va SOLO all'utente attivo!)
+    // 5. Risposta manuale inviata da Umberto
     if (dati.mittente === 'umberto' && dati.azione === 'risposta') {
       if (utenteAttivo && utenteAttivo.readyState === WebSocket.OPEN) {
         utenteAttivo.send(JSON.stringify({ azione: 'risposta', testo: dati.testo }));
