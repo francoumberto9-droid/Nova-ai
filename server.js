@@ -19,8 +19,20 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server });
 
-let utentiConnessi = new Set();
+let utentiConnessi = []; // Lista ordinata degli utenti online
+let utenteAttivo = null; // L'utente con cui stai parlando ora
 let consoleUmberto = null;
+let contatoreUtenti = 1;
+
+function aggiornaStatoConsole() {
+  if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN) {
+    consoleUmberto.send(JSON.stringify({
+      azione: 'stato',
+      utenteCorrente: utenteAttivo ? utenteAttivo.nome : 'Nessuno',
+      totaleOnline: utentiConnessi.length
+    }));
+  }
+}
 
 wss.on('connection', (ws) => {
   let interrotto = false;
@@ -28,32 +40,76 @@ wss.on('connection', (ws) => {
   ws.on('message', async (messaggio) => {
     const dati = JSON.parse(messaggio);
 
+    // 1. Registrazione ruoli
     if (dati.tipo === 'registra') {
       if (dati.ruolo === 'utente') {
-        utentiConnessi.add(ws);
-        if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN) {
-          consoleUmberto.send(JSON.stringify({ azione: 'info', testo: '🟢 Un nuovo utente è entrato nella chat!' }));
+        ws.nome = `Utente #${contatoreUtenti++}`;
+        utentiConnessi.push(ws);
+
+        // Se non stai parlando con nessuno, aggancia subito questo utente
+        if (!utenteAttivo) {
+          utenteAttivo = ws;
         }
+
+        if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN) {
+          consoleUmberto.send(JSON.stringify({ azione: 'info', testo: `🟢 ${ws.nome} è entrato in chat!` }));
+        }
+        aggiornaStatoConsole();
       } else if (dati.ruolo === 'umberto') {
         consoleUmberto = ws;
+        if (!utenteAttivo && utentiConnessi.length > 0) {
+          utenteAttivo = utentiConnessi[0];
+        }
+        aggiornaStatoConsole();
       }
       return;
     }
 
+    // 2. Bottone "Finisci e passa al prossimo utente"
+    if (dati.mittente === 'umberto' && dati.azione === 'prossimo_utente') {
+      if (utentiConnessi.length === 0) {
+        utenteAttivo = null;
+      } else if (utentiConnessi.length === 1) {
+        utenteAttivo = utentiConnessi[0];
+        if (consoleUmberto) {
+          consoleUmberto.send(JSON.stringify({ azione: 'info', testo: `ℹ️ C'è solo ${utenteAttivo.nome} collegato al momento.` }));
+        }
+      } else {
+        // Sposta l'utente attuale in fondo alla lista e prende il successivo
+        const indiceAttuale = utentiConnessi.indexOf(utenteAttivo);
+        const prossimoIndice = (indiceAttuale + 1) % utentiConnessi.length;
+        utenteAttivo = utentiConnessi[prossimoIndice];
+        if (consoleUmberto) {
+          consoleUmberto.send(JSON.stringify({ azione: 'info', testo: `🔄 Conversazione passata a ${utenteAttivo.nome}!` }));
+        }
+      }
+      aggiornaStatoConsole();
+      return;
+    }
+
+    // 3. Stop dall'utente
     if (dati.mittente === 'utente' && dati.azione === 'stop') {
       interrotto = true;
-      if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN) {
-        consoleUmberto.send(JSON.stringify(dati));
+      if (ws === utenteAttivo && consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN) {
+        consoleUmberto.send(JSON.stringify({ azione: 'stop', utente: ws.nome }));
       }
       return;
     }
 
+    // 4. Domanda dall'utente
     if (dati.mittente === 'utente' && dati.azione === 'domanda') {
       interrotto = false;
 
-      if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN) {
-        consoleUmberto.send(JSON.stringify(dati));
-      } else {
+      // Se la console è aperta E questo è l'utente con cui stai parlando -> rispondi tu!
+      if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN && ws === utenteAttivo) {
+        consoleUmberto.send(JSON.stringify({ azione: 'domanda', utente: ws.nome, testo: dati.testo }));
+      } 
+      // Altrimenti (console chiusa OPPURE utente in attesa mentre parli con un altro) -> risponde Gemini!
+      else {
+        if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN && ws !== utenteAttivo) {
+          consoleUmberto.send(JSON.stringify({ azione: 'info', testo: `🤖 (${ws.nome} ha scritto: "${dati.testo}" — gestito da Gemini in automatico)` }));
+        }
+
         if (!API_KEY) {
           ws.send(JSON.stringify({ azione: 'risposta', testo: "⚠️ Chiave API non configurata su Render!" }));
           return;
@@ -88,17 +144,24 @@ wss.on('connection', (ws) => {
       }
     }
 
-    if (dati.mittente === 'umberto') {
-      utentiConnessi.forEach((utente) => {
-        if (utente.readyState === WebSocket.OPEN) {
-          utente.send(JSON.stringify(dati));
-        }
-      });
+    // 5. Risposta manuale inviata da Umberto (va SOLO all'utente attivo!)
+    if (dati.mittente === 'umberto' && dati.azione === 'risposta') {
+      if (utenteAttivo && utenteAttivo.readyState === WebSocket.OPEN) {
+        utenteAttivo.send(JSON.stringify({ azione: 'risposta', testo: dati.testo }));
+      }
     }
   });
 
   ws.on('close', () => {
-    utentiConnessi.delete(ws);
+    utentiConnessi = utentiConnessi.filter(u => u !== ws);
+    if (ws === utenteAttivo) {
+      if (consoleUmberto && consoleUmberto.readyState === WebSocket.OPEN) {
+        consoleUmberto.send(JSON.stringify({ azione: 'info', testo: `🔴 ${ws.nome} ha chiuso la chat.` }));
+      }
+      utenteAttivo = utentiConnessi.length > 0 ? utentiConnessi[0] : null;
+    }
+    aggiornaStatoConsole();
+
     if (ws === consoleUmberto) {
       consoleUmberto = null;
     }
@@ -107,5 +170,5 @@ wss.on('connection', (ws) => {
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log(`Server NOVA Ibrido attivo sulla porta ${PORT}`);
+  console.log(`Server NOVA Multi-Utente attivo sulla porta ${PORT}`);
 });
