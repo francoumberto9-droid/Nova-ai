@@ -2,12 +2,13 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <title>AI Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NOVA AI</title>
   <style>
     body { font-family: sans-serif; background: #1e1e2e; color: #fff; display: flex; flex-direction: column; height: 100vh; margin: 0; }
     #header { padding: 15px; background: #181825; font-weight: bold; font-size: 1.2em; border-bottom: 1px solid #313244; }
     #chat { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
-    .msg { max-width: 70%; padding: 12px 16px; border-radius: 12px; line-height: 1.4; }
+    .msg { max-width: 75%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; }
     .user { background: #313244; align-self: flex-end; }
     .ai { background: #45475a; align-self: flex-start; }
     #controlli { display: flex; padding: 15px; background: #181825; gap: 10px; }
@@ -20,6 +21,85 @@
 <body>
 
 <div id="header">✨ <span id="nomeAiDisplay"></span></div>
+<div id="chat"></div>
+<div id="controlli">
+  <input type="text" id="inputDomanda" placeholder="Chiedi qualcosa..." onkeypress="if(event.key==='Enter') inviaDomanda()">
+  <button id="btnInvia" onclick="inviaDomanda()">Invia</button>
+  <button id="btnStop" onclick="interrompiRisposta()">⏹ Stop</button>
+</div>
+
+<script>
+  const NOME_AI = "NOVA"; // <-- Puoi cambiare il nome dell'AI qui!
+  document.getElementById('nomeAiDisplay').innerText = NOME_AI;
+  document.title = NOME_AI;
+
+  // Si collega automaticamente al server online (wss) o locale (ws)
+  const protocollo = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${protocollo}//${location.host}`);
+
+  let intervalloScrittura = null;
+  let elementoRispostaCorrente = null;
+
+  function inviaDomanda() {
+    const input = document.getElementById('inputDomanda');
+    const testo = input.value.trim();
+    if (!testo) return;
+
+    aggiungiMessaggio(testo, 'user');
+    ws.send(JSON.stringify({ azione: 'domanda', testo: testo }));
+    input.value = '';
+    
+    elementoRispostaCorrente = aggiungiMessaggio("Sto pensando...", 'ai');
+    document.getElementById('btnStop').style.display = 'inline-block';
+  }
+
+  function interrompiRisposta() {
+    clearInterval(intervalloScrittura);
+    document.getElementById('btnStop').style.display = 'none';
+    if (elementoRispostaCorrente) {
+      elementoRispostaCorrente.innerHTML += " <i>[Risposta interrotta]</i>";
+    }
+    ws.send(JSON.stringify({ azione: 'stop' }));
+  }
+
+  ws.onmessage = (event) => {
+    const dati = JSON.parse(event.data);
+    if (dati.azione === 'risposta') {
+      simulaScritturaAI(dati.testo);
+    }
+  };
+
+  function simulaScritturaAI(testoCompleto) {
+    if (!elementoRispostaCorrente) {
+      elementoRispostaCorrente = aggiungiMessaggio("", 'ai');
+    }
+    elementoRispostaCorrente.innerText = "";
+    let i = 0;
+    document.getElementById('btnStop').style.display = 'inline-block';
+
+    intervalloScrittura = setInterval(() => {
+      elementoRispostaCorrente.innerText += testoCompleto.charAt(i);
+      i++;
+      if (i >= testoCompleto.length) {
+        clearInterval(intervalloScrittura);
+        document.getElementById('btnStop').style.display = 'none';
+        elementoRispostaCorrente = null;
+      }
+    }, 20);
+  }
+
+  function aggiungiMessaggio(testo, classe) {
+    const div = document.createElement('div');
+    div.className = `msg ${classe}`;
+    div.innerText = testo;
+    const chat = document.getElementById('chat');
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return div;
+  }
+</script>
+</body>
+</html>an id="nomeAiDisplay"></span></div>
 <div id="chat"></div>
 <div id="controlli">
   <input type="text" id="inputDomanda" placeholder="Chiedi qualcosa..." onkeypress="if(event.key==='Enter') inviaDomanda()">
