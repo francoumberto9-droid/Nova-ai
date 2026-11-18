@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Console di Regia - Umberto</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #0f0; padding: 15px; display: flex; flex-direction: column; height: 92vh; margin: 0; }
+    #log { flex: 1; border: 1px solid #333; padding: 15px; overflow-y: auto; margin-bottom: 15px; background: #000; }
+    .evento-domanda { color: #fff; margin-bottom: 10px; font-size: 1.1em; }
+    .evento-stop { color: #ff4444; font-weight: bold; background: #330000; padding: 5px; margin-bottom: 10px; }
+    .evento-info { color: #888; margin-bottom: 10px; }
+    textarea { width: 100%; height: 80px; background: #222; color: #fff; border: 1px solid #555; padding: 10px; font-size: 1em; box-sizing: border-box; }
+    button { margin-top: 10px; padding: 14px; background: #0f0; color: #000; font-weight: bold; border: none; cursor: pointer; font-size: 1em; }
+  </style>
+</head>
+<body>
+
+<h2>🎛️ Console Segreta di Umberto</h2>
+<div id="log"></div>
+<textarea id="rispostaUmberto" placeholder="Scrivi qui la risposta che apparirà come se l'avesse scritta NOVA..."></textarea>
+<button onclick="inviaRisposta()">Invia Risposta all'Utente</button>
+
+<script>
+  const protocollo = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${protocollo}//${location.host}`);
+  const log = document.getElementById('log');
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ tipo: 'registra', ruolo: 'umberto' }));
+    scriviLog("Connesso al server online. In attesa di domande...", "evento-info");
+  };
+
+  ws.onmessage = (event) => {
+    const dati = JSON.parse(event.data);
+
+    if (dati.azione === 'domanda') {
+      scriviLog(`📩 NUOVA DOMANDA: "${dati.testo}"`, "evento-domanda");
+    } 
+    else if (dati.azione === 'stop') {
+      scriviLog(`⚠️ ATTENZIONE: L'utente ha premuto STOP!`, "evento-stop");
+    }
+    else if (dati.azione === 'info') {
+      scriviLog(dati.testo, "evento-info");
+    }
+  };
+
+  function inviaRisposta() {
+    const area = document.getElementById('rispostaUmberto');
+    const testo = area.value.trim();
+    if (!testo) return;
+
+    ws.send(JSON.stringify({ mittente: 'umberto', azione: 'risposta', testo: testo }));
+    scriviLog(`📤 HAI RISPOSTO: "${testo}"`, "evento-info");
+    area.value = '';
+  }
+
+  function scriviLog(messaggio, classe) {
+    const p = document.createElement('div');
+    p.className = classe;
+    const ora = new Date().toLocaleTimeString();
+    p.innerText = `[${ora}] ${messaggio}`;
+    log.appendChild(p);
+    log.scrollTop = log.scrollHeight;
+  }
+</script>
+</body>
+</html>
