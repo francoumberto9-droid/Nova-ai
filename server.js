@@ -2,9 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const WebSocket = require('ws');
 
-// Crea il server web che smista le due pagine
 const server = http.createServer((req, res) => {
-  // Se l'indirizzo finisce con /umberto, mostra la tua console segreta
   const fileDaAprire = req.url === '/umberto' ? 'umberto.html' : 'index.html';
 
   fs.readFile(fileDaAprire, (err, data) => {
@@ -26,7 +24,6 @@ wss.on('connection', (ws) => {
   ws.on('message', (messaggio) => {
     const dati = JSON.parse(messaggio);
 
-    // Registrazione ruoli
     if (dati.tipo === 'registra') {
       if (dati.ruolo === 'utente') {
         utentiConnessi.add(ws);
@@ -39,12 +36,10 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // Domanda o Stop dall'utente -> vanno alla Console di Umberto
     if (dati.mittente === 'utente' && consoleUmberto) {
       consoleUmberto.send(JSON.stringify(dati));
     }
 
-    // Risposta da Umberto -> va agli utenti in chat
     if (dati.mittente === 'umberto') {
       utentiConnessi.forEach((utente) => {
         if (utente.readyState === WebSocket.OPEN) {
