@@ -56,5 +56,5 @@ wss.on('connection', (ws) => {
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log(`Server NOVA attivo sulla porta ${PORT}`);
+  console.log(`Server NOVA (Regia Umberto) attivo sulla porta ${PORT}`);
 });
